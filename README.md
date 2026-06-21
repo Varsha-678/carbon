@@ -99,14 +99,14 @@ npm run test:coverage
 
 ## ☁️ Google Cloud Platform (GCP) Deployment
 
-This project is configured to run on **Google Cloud Run** (Serverless Containers) under Project ID `carbon-500112`.
+This project is configured to run on **Google Cloud Run** (Serverless Containers) under Project ID `carbon1-500115`.
 
 ### Prerequisites
 1. Ensure your local `gcloud` CLI is logged in. Open your terminal and run:
    ```bash
    gcloud auth login
    ```
-2. Follow the browser prompt to log into the Google Account associated with Project ID `carbon-500112`.
+2. Follow the browser prompt to log into the Google Account associated with Project ID `carbon1-500115`.
 
 ### Deploying the Application
 We have provided a deployment script [deploy-gcp.ps1](file:///c:/Users/VARSHA K/Desktop/carbon/deploy-gcp.ps1) in the root of the project. Run it in a PowerShell terminal:
@@ -117,7 +117,7 @@ We have provided a deployment script [deploy-gcp.ps1](file:///c:/Users/VARSHA K/
 Alternatively, you can run the deployment commands manually from any terminal:
 ```bash
 # 1. Set active project
-gcloud config set project carbon-500112
+gcloud config set project carbon1-500115
 
 # 2. Upload source, build container in Google Cloud Build, and deploy to Cloud Run
 gcloud run deploy carbon-compass \

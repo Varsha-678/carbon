@@ -3,8 +3,8 @@ echo ===================================================
 echo   CarbonCompass GCP Deployment
 echo ===================================================
 echo.
-echo Setting active project to carbon-500112...
-call gcloud config set project carbon-500112
+echo Setting active project to carbon1-500115...
+call gcloud config set project carbon1-500115
 
 echo.
 echo Triggering deployment to Google Cloud Run (asia-south1)...

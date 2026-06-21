@@ -1,5 +1,5 @@
 # Set GCP Project ID
-$PROJECT_ID = "carbon-500112"
+$PROJECT_ID = "carbon1-500115"
 
 Write-Host "Setting active GCP project to $PROJECT_ID..." -ForegroundColor Green
 gcloud config set project $PROJECT_ID
