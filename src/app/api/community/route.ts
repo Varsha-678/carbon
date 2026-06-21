@@ -29,20 +29,19 @@ export async function GET(request: Request) {
       take: 5,
     });
 
-    // Resolve user names for the savings leaderboard
-    const savingsLeaderboard = await Promise.all(
-      savingsGroup.map(async (group) => {
-        const user = await prisma.user.findUnique({
-          where: { id: group.userId },
-          select: { name: true },
-        });
-        return {
-          id: group.userId,
-          name: user?.name || 'Anonymous Eco Warrior',
-          totalSaved: Math.round((group._sum.co2Saved || 0) * 10) / 10,
-        };
-      })
-    );
+    // Resolve user names for the savings leaderboard in a single query (resolving N+1 query issue)
+    const userIds = savingsGroup.map((g) => g.userId);
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
+
+    const savingsLeaderboard = savingsGroup.map((group) => ({
+      id: group.userId,
+      name: userMap.get(group.userId) || 'Anonymous Eco Warrior',
+      totalSaved: Math.round((group._sum.co2Saved || 0) * 10) / 10,
+    }));
 
     // 3. Fetch recent 10 logged actions across the platform for feed (anonymized first name)
     const recentLogs = await prisma.actionLog.findMany({
@@ -66,6 +65,7 @@ export async function GET(request: Request) {
         category: log.category,
         co2Saved: log.co2Saved,
         loggedAt: log.loggedAt,
+        notes: log.notes,
       };
     });
 

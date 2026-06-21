@@ -30,6 +30,7 @@ export interface ActionLog {
   category: 'transport' | 'diet' | 'energy' | 'shopping';
   value: number;
   co2Saved: number;
+  notes?: string | null;
   loggedAt: string;
 }
 

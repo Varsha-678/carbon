@@ -95,10 +95,10 @@ describe('API Routes Integration Tests', () => {
     });
 
     it('post logs handler should log action and calculate correct carbon savings', async () => {
-      const mockLog = { id: 'log-123', actionType: 'plant_based_meal', category: 'diet', value: 3, co2Saved: 4.5, loggedAt: new Date() };
+      const mockLog = { id: 'log-123', actionType: 'plant_based_meal', category: 'diet', value: 3, co2Saved: 4.5, notes: 'Yummy vegan burger!', loggedAt: new Date() };
       vi.mocked(prisma.actionLog.create).mockResolvedValue(mockLog as never);
       
-      const mockUser = { id: 'user-123', streakCount: 2, lastActiveDate: new Date(Date.now() - 24 * 60 * 60 * 1000) }; // active yesterday
+      const mockUser = { id: 'user-123', streakCount: 2, lastActiveDate: new Date(Date.now() - 24 * 60 * 60 * 1000), badges: [] }; // active yesterday
       vi.mocked(prisma.user.findUnique).mockResolvedValue(mockUser as never);
       vi.mocked(prisma.user.update).mockResolvedValue({ ...mockUser, streakCount: 3 } as never);
 
@@ -109,13 +109,14 @@ describe('API Routes Integration Tests', () => {
       const request = new Request('http://localhost/api/logs', {
         method: 'POST',
         headers: { 'x-user-id': 'user-123' },
-        body: JSON.stringify({ actionType: 'plant_based_meal', value: 3 }), // 3 meals * 1.5 = 4.5 kg savings
+        body: JSON.stringify({ actionType: 'plant_based_meal', value: 3, notes: 'Yummy vegan burger!' }), // 3 meals * 1.5 = 4.5 kg savings
       });
 
       const response = await postLogsHandler(request);
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.log.actionType).toBe('plant_based_meal');
+      expect(data.log.notes).toBe('Yummy vegan burger!');
       expect(data.co2Saved).toBe(4.5);
       expect(data.streakCount).toBe(3); // Streak incremented from 2 to 3
     });

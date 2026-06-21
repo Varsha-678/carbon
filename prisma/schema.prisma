@@ -43,7 +43,11 @@ model ActionLog {
   category   String   // "transport" | "diet" | "energy" | "shopping"
   value      Float    // numerical value depending on type (e.g. km, meals, loads)
   co2Saved   Float    // kg CO2e saved
+  notes      String?
   loggedAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([category])
 }
 
 model Goal {
@@ -55,6 +59,8 @@ model Goal {
   endDate                DateTime
   status                 String   // "ACTIVE" | "COMPLETED" | "FAILED"
   createdAt              DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Badge {
@@ -65,4 +71,5 @@ model Badge {
   unlockedAt DateTime @default(now())
 
   @@unique([userId, type])
+  @@index([userId])
 }

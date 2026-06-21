@@ -50,6 +50,53 @@ const BADGE_INFO = {
   GOAL_GETTER: { name: 'Goal Overachiever', desc: 'Completed an active carbon reduction goal.', color: 'from-fuchsia-600 to-pink-600' },
 };
 
+const AWARENESS_ARTICLES = [
+  {
+    id: 'art1',
+    title: 'Reducing Home Energy Footprint',
+    category: 'energy',
+    summary: 'Heating, AC, and appliances account for over 30% of average personal carbon emissions. Learn the high-impact ways to cut down electricity usage.',
+    tips: [
+      'Upgrade to LED lightbulbs: saves up to 75% lighting electricity.',
+      'Unplug phantom energy loads: electronics consume power even when turned off.',
+      'Lower heating thermostat: turning down by just 1.5°C saves about 10% on heating bills.'
+    ]
+  },
+  {
+    id: 'art2',
+    title: 'Sustainable Commuting Guide',
+    category: 'transport',
+    summary: 'Solo gasoline car trips are the largest single contributor to modern personal transport emissions. Transitioning commuting habits yields immediate carbon cuts.',
+    tips: [
+      'Switch short trips (<3 km) to walking or cycling: zero carbon, high fitness benefit.',
+      'Utilize public transit: trains and buses produce 75% fewer emissions per passenger km than solo driving.',
+      'Maintain steady highway driving: avoiding sudden acceleration saves 15% on fuel consumption.'
+    ]
+  },
+  {
+    id: 'art3',
+    title: 'The Environmental Impact of Food',
+    category: 'diet',
+    summary: 'Global agriculture contributes nearly a quarter of greenhouse gases. Dietary shifts, particularly reducing red meat, make a massive impact.',
+    tips: [
+      'Incorporate plant-based meals: plant meals produce up to 90% fewer greenhouse emissions than beef.',
+      'Avoid food waste: food rot in landfills produces high amounts of potent methane gas.',
+      'Shop seasonal and local: reduces transport emissions (food miles) and packaging.'
+    ]
+  },
+  {
+    id: 'art4',
+    title: 'Circular Economy & Shopping Habits',
+    category: 'shopping',
+    summary: 'Manufacturing new clothing, tech, and appliances is an emission-heavy industrial process. Extending product life reduces demand for new manufacturing.',
+    tips: [
+      'Adopt a repair-first mindset: stitch clothes, fix tech, and keep items longer.',
+      'Choose refurbished electronics: certification ensures quality and saves 80% carbon cost of new hardware.',
+      'Shop secondhand clothing: the fashion industry accounts for 10% of global emissions.'
+    ]
+  }
+];
+
 interface LeaderboardUser {
   id: string;
   name: string;
@@ -64,6 +111,7 @@ interface ActivityItem {
   category: string;
   co2Saved: number;
   loggedAt: string;
+  notes?: string | null;
 }
 
 interface CommunityData {
@@ -88,8 +136,17 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, router]);
 
-  // Tab state: "me" or "community"
-  const [activeTab, setActiveTab] = useState<'me' | 'community'>('me');
+  // Tab state: "me" or "community" or "hub"
+  const [activeTab, setActiveTab] = useState<'me' | 'community' | 'hub'>('me');
+
+  // Awareness Hub Search & Filter states
+  const [hubSearchQuery, setHubSearchQuery] = useState('');
+  const [hubFilterCategory, setHubFilterCategory] = useState('all');
+
+  // PDF Export Trigger
+  const handleExportPDF = () => {
+    window.print();
+  };
 
   // UI state
   const [logs, setLogs] = useState<ActionLog[]>([]);
@@ -120,8 +177,20 @@ export default function DashboardPage() {
   // Log action form state
   const [selectedAction, setSelectedAction] = useState<keyof typeof ACTION_DETAILS>('walk_instead_of_drive');
   const [actionValue, setActionValue] = useState<number>(5);
+  const [actionNotes, setActionNotes] = useState('');
   const [isLogging, setIsLogging] = useState(false);
   const [actionError, setActionError] = useState('');
+
+  // Interactive SVG chart states
+  const [hoveredDonutIdx, setHoveredDonutIdx] = useState<number | null>(null);
+  const [hoveredBarIdx, setHoveredBarIdx] = useState<number | null>(null);
+
+  // Carbon Savings Simulator state
+  const [simCommute, setSimCommute] = useState(40);
+  const [simMeals, setSimMeals] = useState(10);
+  const [simDryer, setSimDryer] = useState(5);
+  const [simHeating, setSimHeating] = useState(5);
+  const [simRecycle, setSimRecycle] = useState(20);
   
   // Interactive notifications
   const [notification, setNotification] = useState<{ type: string; title: string; desc: string } | null>(null);
@@ -270,6 +339,32 @@ export default function DashboardPage() {
     };
   }, [user]);
 
+  // Memoized donut data calculation for visual category breakdown
+  const donutData = useMemo(() => {
+    if (!baselineInfo) return [];
+    const total = baselineInfo.total || 1;
+    const items = [
+      { label: 'Transport', val: baselineInfo.transport, color: '#6366f1', hoverColor: '#818cf8' },
+      { label: 'Diet & Food', val: baselineInfo.diet, color: '#10b981', hoverColor: '#34d399' },
+      { label: 'Home Energy', val: baselineInfo.energy, color: '#f59e0b', hoverColor: '#fbbf24' },
+      { label: 'Shopping', val: baselineInfo.shopping, color: '#f43f5e', hoverColor: '#fb7185' },
+    ];
+    
+    let accumulatedPct = 0;
+    return items.map((item) => {
+      const pct = (item.val / total) * 100;
+      const strokeDasharray = `${(pct / 100) * 314.159} 314.159`;
+      const strokeDashoffset = `${-(accumulatedPct / 100) * 314.159}`;
+      accumulatedPct += pct;
+      return {
+        ...item,
+        pct,
+        strokeDasharray,
+        strokeDashoffset,
+      };
+    });
+  }, [baselineInfo]);
+
   // Handle Action Log Submission
   const handleLogAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +382,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           actionType: selectedAction,
           value: actionValue,
+          notes: actionNotes.trim() || undefined,
         }),
       });
 
@@ -316,6 +412,7 @@ export default function DashboardPage() {
 
         // Reset input, reload values
         setActionValue(5);
+        setActionNotes('');
         await refreshUser();
         fetchLogs(page, filterCategory);
         fetchGoal();
@@ -387,7 +484,7 @@ export default function DashboardPage() {
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
       
       {/* HEADER NAVBAR */}
-      <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800/85 px-6 py-4">
+      <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800/85 px-6 py-4 print:hidden">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Compass className="w-7 h-7 text-emerald-400" aria-hidden="true" />
@@ -441,8 +538,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* TAB SELECTOR (My Compass vs Community Feed) */}
-      <div className="max-w-7xl w-full mx-auto px-6 mt-6">
+      {/* TAB SELECTOR (My Compass vs Community Feed vs Awareness Hub) */}
+      <div className="max-w-7xl w-full mx-auto px-6 mt-6 print:hidden">
         <div className="flex border-b border-slate-800" role="tablist">
           <button
             role="tab"
@@ -472,6 +569,21 @@ export default function DashboardPage() {
           >
             <Users className="w-4 h-4" />
             <span>Community Hub</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'hub'}
+            aria-controls="panel-hub"
+            id="tab-hub"
+            onClick={() => setActiveTab('hub')}
+            className={`py-3 px-6 text-sm font-semibold border-b-2 cursor-pointer transition flex items-center gap-1.5 ${
+              activeTab === 'hub'
+                ? 'border-emerald-400 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>Awareness Hub</span>
           </button>
         </div>
       </div>
@@ -569,6 +681,21 @@ export default function DashboardPage() {
                       <span className="block text-xxs text-slate-500 mt-2 italic">
                         CO2e Avoided multiplier: {ACTION_DETAILS[selectedAction].baseSaving} kg per {ACTION_DETAILS[selectedAction].unit}.
                       </span>
+                    </div>
+
+                    <div>
+                      <label htmlFor="action-notes" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                        Notes / Comments (Optional)
+                      </label>
+                      <input
+                        id="action-notes"
+                        type="text"
+                        maxLength={140}
+                        value={actionNotes}
+                        onChange={(e) => setActionNotes(e.target.value)}
+                        placeholder="e.g. Walked to work on a sunny day!"
+                        className="block w-full px-3.5 py-2.5 bg-slate-950/80 border border-slate-850 rounded-lg text-slate-200 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition"
+                      />
                     </div>
 
                     <button
@@ -718,29 +845,78 @@ export default function DashboardPage() {
                         </tbody>
                       </table>
 
-                      <div className="space-y-4" aria-hidden="true">
-                        {[
-                          { label: 'Transport', val: baselineInfo.transport, color: 'bg-indigo-500' },
-                          { label: 'Diet & Food', val: baselineInfo.diet, color: 'bg-emerald-500' },
-                          { label: 'Home Energy', val: baselineInfo.energy, color: 'bg-amber-500' },
-                          { label: 'Shopping', val: baselineInfo.shopping, color: 'bg-rose-500' },
-                        ].map((item) => {
-                          const pct = baselineInfo.total > 0 ? (item.val / baselineInfo.total) * 100 : 0;
-                          return (
-                            <div key={item.label}>
-                              <div className="flex justify-between text-xs font-semibold text-slate-450 mb-1">
-                                <span>{item.label}</span>
-                                <span>{item.val} kg ({Math.round(pct)}%)</span>
+                      <div className="flex flex-col sm:flex-row items-center gap-6" aria-hidden="true">
+                        {/* Interactive Donut SVG */}
+                        <div className="relative w-32 h-32 shrink-0 flex items-center justify-center">
+                          <svg width="100%" height="100%" viewBox="0 0 120 120" className="overflow-visible">
+                            <g transform="rotate(-90 60 60)">
+                              <circle cx="60" cy="60" r="50" fill="transparent" stroke="#1e293b" strokeWidth="10" />
+                              {donutData.map((item, idx) => (
+                                <circle
+                                  key={item.label}
+                                  cx="60"
+                                  cy="60"
+                                  r="50"
+                                  fill="transparent"
+                                  stroke={item.color}
+                                  strokeWidth={hoveredDonutIdx === idx ? 14 : 10}
+                                  strokeDasharray={item.strokeDasharray}
+                                  strokeDashoffset={item.strokeDashoffset}
+                                  strokeLinecap="round"
+                                  className="transition-all duration-300 cursor-pointer"
+                                  onMouseEnter={() => setHoveredDonutIdx(idx)}
+                                  onMouseLeave={() => setHoveredDonutIdx(null)}
+                                />
+                              ))}
+                            </g>
+                          </svg>
+                          
+                          {/* Inner Label */}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-1 pointer-events-none">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                              {hoveredDonutIdx !== null ? donutData[hoveredDonutIdx].label : 'Total'}
+                            </span>
+                            <span className="text-xs font-black text-white">
+                              {hoveredDonutIdx !== null ? `${donutData[hoveredDonutIdx].val} kg` : `${baselineInfo.total} kg`}
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-semibold">
+                              {hoveredDonutIdx !== null ? `${Math.round(donutData[hoveredDonutIdx].pct)}%` : 'Baseline'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Legend */}
+                        <div className="flex-1 space-y-2.5 w-full">
+                          {donutData.map((item, idx) => (
+                            <div
+                              key={item.label}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                hoveredDonutIdx === idx ? 'bg-slate-900' : 'hover:bg-slate-900/40'
+                              }`}
+                              onMouseEnter={() => setHoveredDonutIdx(idx)}
+                              onMouseLeave={() => setHoveredDonutIdx(null)}
+                            >
+                              <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                                  <span className={hoveredDonutIdx === idx ? 'text-white' : ''}>{item.label}</span>
+                                </div>
+                                <span className={hoveredDonutIdx === idx ? 'text-white font-bold' : ''}>
+                                  {item.val} kg ({Math.round(item.pct)}%)
+                                </span>
                               </div>
-                              <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+                              <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full ${item.color} rounded-full`}
-                                  style={{ width: `${pct}%` }}
+                                  className="h-full rounded-full transition-all duration-300"
+                                  style={{
+                                    width: `${item.pct}%`,
+                                    backgroundColor: item.color,
+                                  }}
                                 />
                               </div>
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -752,35 +928,276 @@ export default function DashboardPage() {
                           Comparison data: Your monthly baseline emissions are {baselineInfo.total} kg CO2e, compared to global average 400 kg, national average 1300 kg, and sustainable target 200 kg.
                         </p>
 
-                        <div className="space-y-3.5" aria-hidden="true">
-                          {[
-                            { label: 'Your Baseline', val: baselineInfo.total, color: 'bg-emerald-400', max: 1300 },
-                            { label: 'Global Average', val: 400, color: 'bg-slate-500', max: 1300 },
-                            { label: 'National Avg (US)', val: 1300, color: 'bg-indigo-600', max: 1300 },
-                            { label: 'Sustainable Target', val: 200, color: 'bg-emerald-600', max: 1300 },
-                          ].map((item) => {
-                            const pct = Math.min(100, (item.val / item.max) * 100);
-                            return (
-                              <div key={item.label}>
-                                <div className="flex justify-between text-xs font-semibold text-slate-455 mb-1">
-                                  <span>{item.label}</span>
-                                  <span className="font-bold">{item.val} kg/mo</span>
-                                </div>
-                                <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full ${item.color} rounded-full`}
-                                    style={{ width: `${pct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div className="flex flex-col items-stretch gap-4 h-full" aria-hidden="true">
+                          {/* SVG Bar Chart */}
+                          <div className="relative h-28 w-full mt-2">
+                            <svg width="100%" height="100%" viewBox="0 0 320 100" preserveAspectRatio="none" className="overflow-visible">
+                              {/* Grid lines */}
+                              <line x1="0" y1="20" x2="320" y2="20" stroke="#1e293b" strokeDasharray="2 2" />
+                              <line x1="0" y1="50" x2="320" y2="50" stroke="#1e293b" strokeDasharray="2 2" />
+                              <line x1="0" y1="80" x2="320" y2="80" stroke="#1e293b" strokeDasharray="2 2" />
+                              
+                              {/* Y Axis Mini labels */}
+                              <text x="-5" y="23" className="text-[7px] fill-slate-500 font-bold" textAnchor="end">1000</text>
+                              <text x="-5" y="53" className="text-[7px] fill-slate-500 font-bold" textAnchor="end">500</text>
+                              <text x="-5" y="83" className="text-[7px] fill-slate-500 font-bold" textAnchor="end">0</text>
+
+                              {/* Bars */}
+                              {[
+                                { label: 'You', val: baselineInfo.total, color: '#34d399', hoverColor: '#059669' },
+                                { label: 'Global', val: 400, color: '#64748b', hoverColor: '#475569' },
+                                { label: 'US Avg', val: 1300, color: '#4f46e5', hoverColor: '#4338ca' },
+                                { label: 'Target', val: 200, color: '#059669', hoverColor: '#047857' },
+                              ].map((item, idx) => {
+                                const maxVal = 1350;
+                                const barWidth = 35;
+                                const spacing = 80;
+                                const x = idx * spacing + 20;
+                                const barHeight = Math.max(6, (item.val / maxVal) * 75);
+                                const y = 80 - barHeight;
+
+                                return (
+                                  <g key={item.label} className="cursor-pointer">
+                                    <rect
+                                      x={x}
+                                      y={y}
+                                      width={barWidth}
+                                      height={barHeight}
+                                      rx="3"
+                                      fill={hoveredBarIdx === idx ? item.hoverColor : item.color}
+                                      className="transition-all duration-300"
+                                      onMouseEnter={() => setHoveredBarIdx(idx)}
+                                      onMouseLeave={() => setHoveredBarIdx(null)}
+                                    />
+                                    <text
+                                      x={x + barWidth / 2}
+                                      y="92"
+                                      className="text-[8px] fill-slate-400 font-bold"
+                                      textAnchor="middle"
+                                    >
+                                      {item.label}
+                                    </text>
+                                    <text
+                                      x={x + barWidth / 2}
+                                      y={y - 5}
+                                      className={`text-[8px] fill-slate-200 font-bold transition-opacity duration-200 ${
+                                        hoveredBarIdx === idx ? 'opacity-100' : 'opacity-80'
+                                      }`}
+                                      textAnchor="middle"
+                                    >
+                                      {item.val} kg
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          </div>
+                          
+                          <p className="text-[9px] text-slate-500 leading-relaxed italic mt-1.5">
+                            Sustainable target is to limit warming to 1.5°C (&lt;2.4 tonnes/year).
+                          </p>
                         </div>
                       </div>
                     </div>
                   </div>
                 </section>
 
+                {/* SAVINGS SIMULATOR */}
+                <section className="bg-slate-900/60 border border-slate-850 p-6 rounded-2xl shadow-xl space-y-6 animate-slide-up" aria-labelledby="simulator-title">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-5.5 h-5.5 text-emerald-400" />
+                    <h2 id="simulator-title" className="text-lg font-extrabold text-white">Daily Habit Savings Simulator</h2>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Slide controls below to preview how much monthly CO2e emissions you would save if you adopted these habits.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    {/* Left: Sliders */}
+                    <div className="space-y-4">
+                      {/* Slider 1: Commutes */}
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Active Commutes (Walk/Cycle) instead of Driving</span>
+                          <span className="text-emerald-400 font-bold">{simCommute} km/mo</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="200"
+                          step="10"
+                          value={simCommute}
+                          onChange={(e) => setSimCommute(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">Saves 0.20 kg CO2e per km.</span>
+                      </div>
+
+                      {/* Slider 2: Plant-based meals */}
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Plant-based meals eaten (replacing meat)</span>
+                          <span className="text-emerald-400 font-bold">{simMeals} meals/mo</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="60"
+                          step="2"
+                          value={simMeals}
+                          onChange={(e) => setSimMeals(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">Saves 1.50 kg CO2e per meal.</span>
+                      </div>
+
+                      {/* Slider 3: Air-dry laundry */}
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Air-dry laundry loads (avoiding dryer)</span>
+                          <span className="text-emerald-400 font-bold">{simDryer} loads/mo</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="1"
+                          value={simDryer}
+                          onChange={(e) => setSimDryer(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">Saves 1.35 kg CO2e per load.</span>
+                      </div>
+
+                      {/* Slider 4: Thermostat */}
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Days heating turned down by 1.5°C</span>
+                          <span className="text-emerald-400 font-bold">{simHeating} days/mo</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          value={simHeating}
+                          onChange={(e) => setSimHeating(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">Saves 1.20 kg CO2e per day.</span>
+                      </div>
+
+                      {/* Slider 5: Recycling */}
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Items recycled properly</span>
+                          <span className="text-emerald-400 font-bold">{simRecycle} items/mo</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={simRecycle}
+                          onChange={(e) => setSimRecycle(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">Saves 0.15 kg CO2e per item.</span>
+                      </div>
+                    </div>
+
+                    {/* Right: SVG Gauge */}
+                    <div className="flex flex-col items-center text-center p-4 bg-slate-950/40 border border-slate-850 rounded-2xl relative">
+                      {(() => {
+                        const saved = (simCommute * 0.2) + (simMeals * 1.5) + (simDryer * 1.35) + (simHeating * 1.2) + (simRecycle * 0.15);
+                        const roundedSaved = Math.round(saved * 10) / 10;
+                        const baselineTotal = baselineInfo.total || 1;
+                        const pctReduced = Math.min(100, Math.round((saved / baselineTotal) * 100));
+
+                        // SVG Gauge math:
+                        // Arc length for semi-circle is 180 degrees.
+                        // Gauge goes from -180 to 0 degrees, radius 40, circumference of full circle is 2*PI*40 = 251.32.
+                        // Semi-circle path length is 125.66.
+                        // Stroke dasharray="125.66 251.32"
+                        // Stroke dashoffset for pctReduced: 125.66 - (pctReduced / 100) * 125.66
+                        const semiCircumference = 125.66;
+                        const strokeOffset = semiCircumference - (pctReduced / 100) * semiCircumference;
+
+                        // Needle rotation:
+                        // 0% -> -180 deg, 100% -> 0 deg.
+                        // rotation = -180 + (pctReduced / 100) * 180
+                        const rotation = -180 + (pctReduced / 100) * 180;
+
+                        return (
+                          <>
+                            <div className="w-full max-w-[200px] aspect-[1.6/1] relative flex items-center justify-center">
+                              <svg width="100%" height="100%" viewBox="0 0 100 60" className="overflow-visible">
+                                <defs>
+                                  <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#10b981" />
+                                    <stop offset="50%" stopColor="#34d399" />
+                                    <stop offset="100%" stopColor="#60a5fa" />
+                                  </linearGradient>
+                                </defs>
+                                {/* Background grey semi-circle arc */}
+                                <path
+                                  d="M 10 50 A 40 40 0 0 1 90 50"
+                                  fill="transparent"
+                                  stroke="#1e293b"
+                                  strokeWidth="10"
+                                  strokeLinecap="round"
+                                />
+                                {/* Active semi-circle arc */}
+                                <path
+                                  d="M 10 50 A 40 40 0 0 1 90 50"
+                                  fill="transparent"
+                                  stroke="url(#gaugeGradient)"
+                                  strokeWidth="10"
+                                  strokeLinecap="round"
+                                  strokeDasharray="125.66 251.32"
+                                  strokeDashoffset={strokeOffset}
+                                  className="transition-all duration-500 ease-out"
+                                />
+                                
+                                {/* Needle indicator */}
+                                <g transform={`translate(50, 50) rotate(${rotation})`} className="transition-transform duration-500 ease-out">
+                                  <line x1="0" y1="0" x2="-35" y2="0" stroke="#f1f5f9" strokeWidth="2.5" strokeLinecap="round" />
+                                  <circle cx="0" cy="0" r="4" fill="#f1f5f9" />
+                                </g>
+
+                                {/* Mini labels */}
+                                <text x="10" y="58" className="text-[7px] fill-slate-500 font-bold" textAnchor="middle">0%</text>
+                                <text x="50" y="8" className="text-[7px] fill-slate-500 font-bold" textAnchor="middle">50%</text>
+                                <text x="90" y="58" className="text-[7px] fill-slate-500 font-bold" textAnchor="middle">100%</text>
+                              </svg>
+
+                              {/* Center value overlay */}
+                              <div className="absolute bottom-1 text-center">
+                                <span className="block text-2xl font-black text-emerald-400">-{roundedSaved} kg</span>
+                                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">CO2e Saved / mo</span>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 space-y-1">
+                              <span className="block text-sm font-bold text-white">
+                                Reduces Baseline by <span className="text-emerald-400">{pctReduced}%</span>
+                              </span>
+                              <p className="text-[11px] text-slate-400 leading-normal max-w-[280px] mx-auto">
+                                {pctReduced === 0
+                                  ? "Adjust sliders to see potential carbon impact!"
+                                  : pctReduced < 15
+                                  ? "A good start! Even small shifts add up to significant savings over a year."
+                                  : pctReduced < 35
+                                  ? "Excellent! This level of reduction would make your footprint highly sustainable."
+                                  : "Outstanding! You are on track to exceed global targets and lead an eco-friendly lifestyle!"}
+                              </p>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </section>
                 {/* INSIGHTS & BADGES */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* INSIGHTS */}
@@ -917,6 +1334,16 @@ export default function DashboardPage() {
                         <Download className="w-3.5 h-3.5" />
                         <span>Export CSV</span>
                       </button>
+
+                      <button
+                        onClick={handleExportPDF}
+                        className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold text-slate-350 bg-slate-850 hover:bg-slate-800 hover:text-white border border-slate-750 focus:outline-none focus:ring-1 focus:ring-slate-600 transition cursor-pointer"
+                        title="Print or save this page as a PDF report"
+                        aria-label="Export history to PDF"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Export PDF</span>
+                      </button>
                     </div>
                   </div>
 
@@ -943,6 +1370,11 @@ export default function DashboardPage() {
                                 <span className="block text-xxs text-slate-500 mt-0.5">
                                   {log.value} {detail?.unit} logged on {new Date(log.loggedAt).toLocaleDateString()}
                                 </span>
+                                {log.notes && (
+                                  <span className="block text-[10px] text-slate-400 mt-1 italic border-l border-emerald-500/45 pl-2">
+                                    &quot;{log.notes}&quot;
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -992,7 +1424,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'community' ? (
           /* COMMUNITY HUB VIEW */
           <div id="panel-community" role="tabpanel" aria-labelledby="tab-community" className="space-y-6 md:space-y-8 animate-fade-in">
             {/* COLLECTIVE IMPACT BANNER */}
@@ -1137,6 +1569,11 @@ export default function DashboardPage() {
                               <p className="text-xxs text-slate-400 mt-1">
                                 {detail?.label || activity.actionType}
                               </p>
+                              {activity.notes && (
+                                <p className="text-xxs text-slate-350 mt-1.5 italic bg-slate-900/60 p-2 rounded border border-slate-850/50">
+                                  &quot;{activity.notes}&quot;
+                                </p>
+                              )}
                               <span className="block text-[10px] text-slate-550 mt-2 text-right">
                                 {new Date(activity.loggedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
@@ -1152,11 +1589,100 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-        )}
+        ) : (
+              /* AWARENESS HUB VIEW */
+              <div id="panel-hub" role="tabpanel" aria-labelledby="tab-hub" className="space-y-6 md:space-y-8 animate-fade-in">
+                {/* Search and Category Filter */}
+                <section className="bg-slate-900/60 border border-slate-850 p-6 rounded-2xl shadow-xl space-y-4" aria-labelledby="hub-title">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h2 id="hub-title" className="text-xl font-extrabold text-white flex items-center gap-2">
+                        <Compass className="w-6 h-6 text-emerald-400" />
+                        <span>Climate Awareness & Education Hub</span>
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Explore actionable guides and insights to reduce your daily carbon footprints.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      {/* Search box */}
+                      <input
+                        type="text"
+                        value={hubSearchQuery}
+                        onChange={(e) => setHubSearchQuery(e.target.value)}
+                        placeholder="Search articles..."
+                        className="block px-3.5 py-1.5 bg-slate-950/80 border border-slate-850 rounded-lg text-slate-200 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition w-full sm:w-48"
+                      />
+
+                      {/* Category Dropdown */}
+                      <select
+                        value={hubFilterCategory}
+                        onChange={(e) => setHubFilterCategory(e.target.value)}
+                        className="block px-3 py-1.5 bg-slate-950/80 border border-slate-850 rounded-lg text-slate-200 text-xs focus:border-emerald-500 focus:ring-0 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">All Categories</option>
+                        <option value="transport">Transportation</option>
+                        <option value="diet">Diet & Food</option>
+                        <option value="energy">Home Energy</option>
+                        <option value="shopping">Shopping</option>
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Articles Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {(() => {
+                    const filtered = AWARENESS_ARTICLES.filter((art) => {
+                      const matchCat = hubFilterCategory === 'all' || art.category === hubFilterCategory;
+                      const matchQuery = hubSearchQuery.trim() === '' || 
+                        art.title.toLowerCase().includes(hubSearchQuery.toLowerCase()) ||
+                        art.summary.toLowerCase().includes(hubSearchQuery.toLowerCase());
+                      return matchCat && matchQuery;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="col-span-full text-center py-12 bg-slate-900/40 border border-dashed border-slate-850 rounded-2xl">
+                          <p className="text-sm text-slate-400 italic">No articles match your search criteria.</p>
+                        </div>
+                      );
+                    }
+
+                    return filtered.map((art) => (
+                      <article
+                        key={art.id}
+                        className="bg-slate-900/60 border border-slate-850 p-6 rounded-2xl shadow-xl flex flex-col justify-between hover:border-slate-800 transition duration-205"
+                      >
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="bg-emerald-950/60 border border-emerald-500/20 text-emerald-400 text-xxs font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              {art.category}
+                            </span>
+                          </div>
+                          <h3 className="text-lg font-bold text-white mb-2">{art.title}</h3>
+                          <p className="text-xs text-slate-400 leading-relaxed mb-4">{art.summary}</p>
+                          
+                          <div className="space-y-2 border-t border-slate-850/50 pt-4">
+                            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Top Reduction Tips:</h4>
+                            <ul className="list-disc pl-4 text-xs text-slate-350 space-y-1.5">
+                              {art.tips.map((tip, i) => (
+                                <li key={i}>{tip}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </article>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
       </main>
 
       {/* FOOTER */}
-      <footer className="bg-slate-950 border-t border-slate-900 py-6 px-6 text-center text-slate-500 text-xs mt-12">
+      <footer className="bg-slate-950 border-t border-slate-900 py-6 px-6 text-center text-slate-500 text-xs mt-12 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>&copy; 2026 CarbonCompass. Helping you navigate to a zero-carbon lifestyle.</p>
           <div className="flex gap-4">
@@ -1166,6 +1692,98 @@ export default function DashboardPage() {
           </div>
         </div>
       </footer>
+
+      {/* PRINT-ONLY SUSTAINABILITY REPORT */}
+      <div className="hidden print:block p-8 bg-white text-black min-h-screen">
+        <div className="border-b-2 border-emerald-500 pb-4 mb-6">
+          <h1 className="text-3xl font-black text-slate-900">CarbonCompass</h1>
+          <p className="text-sm text-slate-600 font-bold uppercase tracking-widest mt-1">Sustainability Impact & Progress Report</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 mb-8 text-sm text-slate-700">
+          <div>
+            <p><strong>Prepared For:</strong> {user.name}</p>
+            <p><strong>Email Address:</strong> {user.email}</p>
+          </div>
+          <div className="text-right">
+            <p><strong>Report Date:</strong> {new Date().toLocaleDateString()}</p>
+            <p><strong>Current Active Streak:</strong> {user.streakCount} days</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="border border-slate-300 p-4 rounded-xl text-center">
+            <span className="text-xs text-slate-500 font-bold uppercase">Baseline Footprint</span>
+            <span className="block text-2xl font-black text-slate-800 mt-1">{baselineInfo.total} kg CO2e/mo</span>
+          </div>
+          <div className="border border-slate-300 p-4 rounded-xl text-center">
+            <span className="text-xs text-slate-500 font-bold uppercase">Cumulative Carbon Saved</span>
+            <span className="block text-2xl font-black text-emerald-600 mt-1">{totalSavings} kg CO2e</span>
+          </div>
+          <div className="border border-slate-300 p-4 rounded-xl text-center">
+            <span className="text-xs text-slate-500 font-bold uppercase">Estimated Current Footprint</span>
+            <span className="block text-2xl font-black text-slate-800 mt-1">{currentEstFootprint} kg/mo</span>
+          </div>
+        </div>
+
+        <div className="border border-slate-300 p-6 rounded-xl mb-8">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Onboarding Baseline Breakdown</h2>
+          <div className="grid grid-cols-4 gap-4 text-center">
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <span className="text-xs text-slate-500 font-semibold block">Transportation</span>
+              <span className="text-sm font-bold text-slate-800 mt-1">{baselineInfo.transport} kg CO2e</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <span className="text-xs text-slate-500 font-semibold block">Diet & Food</span>
+              <span className="text-sm font-bold text-slate-800 mt-1">{baselineInfo.diet} kg CO2e</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <span className="text-xs text-slate-500 font-semibold block">Home Energy</span>
+              <span className="text-sm font-bold text-slate-800 mt-1">{baselineInfo.energy} kg CO2e</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <span className="text-xs text-slate-500 font-semibold block">Shopping</span>
+              <span className="text-sm font-bold text-slate-800 mt-1">{baselineInfo.shopping} kg CO2e</span>
+            </div>
+          </div>
+        </div>
+
+        {goal && (
+          <div className="border border-slate-300 p-6 rounded-xl mb-8">
+            <h2 className="text-lg font-bold text-slate-800 mb-2 border-b pb-2">Active Emission Reduction Goal</h2>
+            <p className="text-sm mb-4">Aiming to reduce footprint by <strong>{goal.targetReductionPercent}%</strong> by <strong>{new Date(goal.endDate).toLocaleDateString()}</strong>.</p>
+            {goalProgress && (
+              <div className="text-sm">
+                <p><strong>Goal Progress:</strong> {goalProgress.percent}% completed</p>
+                <p><strong>Emissions Avoided:</strong> {goalProgress.actualSavingsKg} kg saved (Target: {goalProgress.targetSavingsKg} kg)</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="border border-slate-300 p-6 rounded-xl">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Unlocked Achievements</h2>
+          <div className="grid grid-cols-2 gap-4">
+            {user.badges.map((badgeKey) => {
+              const info = BADGE_INFO[badgeKey as keyof typeof BADGE_INFO];
+              if (!info) return null;
+              return (
+                <div key={badgeKey} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold">🏆</div>
+                  <div>
+                    <span className="block text-sm font-bold text-slate-800">{info.name}</span>
+                    <span className="block text-xs text-slate-500">{info.desc}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="text-center text-xs text-slate-400 mt-12 border-t pt-4">
+          Report generated by CarbonCompass. Conforms to sustainable lifestyle targets.
+        </div>
+      </div>
     </div>
   );
 }

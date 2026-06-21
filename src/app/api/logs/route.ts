@@ -14,6 +14,7 @@ const actionTypesMapping = {
 const logSchema = z.object({
   actionType: z.enum(['walk_instead_of_drive', 'plant_based_meal', 'air_dry_laundry', 'lower_heating', 'recycle']),
   value: z.number().positive('Value must be greater than zero'),
+  notes: z.string().max(140, 'Notes must be 140 characters or less').optional(),
 });
 
 export async function GET(request: Request) {
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { actionType, value } = result.data;
+    const { actionType, value, notes } = result.data;
     const category = actionTypesMapping[actionType];
     const co2Saved = calculateActionSavings(actionType, value);
 
@@ -96,12 +97,14 @@ export async function POST(request: Request) {
         category,
         value,
         co2Saved,
+        notes: notes || null,
       },
     });
 
     // Update streak and badges
     const user = await prisma.user.findUnique({
       where: { id: userId },
+      include: { badges: true },
     });
 
     if (!user) {
@@ -139,16 +142,19 @@ export async function POST(request: Request) {
     });
 
     // Check & Award Gamified Badges
+    const existingBadgeTypes = new Set((user.badges || []).map((b) => b.type));
     const unlockedBadges: string[] = [];
 
     const awardBadge = async (badgeName: string) => {
+      if (existingBadgeTypes.has(badgeName)) return;
       try {
         const badge = await prisma.badge.create({
           data: { userId, type: badgeName },
         });
         unlockedBadges.push(badge.type);
+        existingBadgeTypes.add(badgeName);
       } catch {
-        // Safe to ignore unique constraint failures (already unlocked)
+        // Safe to ignore
       }
     };
 
