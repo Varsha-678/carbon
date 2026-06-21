@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+*.db*
+*.log
+.env
+.env.local
+.env.*.local
+deploy-gcp.ps1
+Dockerfile
+.dockerignore

@@ -1,0 +1,68 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String      @id @default(uuid())
+  email           String      @unique
+  passwordHash    String
+  name            String
+  streakCount     Int         @default(0)
+  lastActiveDate  DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  baseline        Baseline?
+  logs            ActionLog[]
+  goals           Goal[]
+  badges          Badge[]
+}
+
+model Baseline {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transportDistance  Float    // km per month
+  transportType      String   // "car" | "public" | "walk"
+  dietType           String   // "vegan" | "vegetarian" | "low-meat" | "high-meat"
+  homeEnergyKwh      Float    // kWh per month
+  shoppingLevel      String   // "high" | "medium" | "low"
+  calculatedBaseline Float    // total kg CO2e / month
+  createdAt          DateTime @default(now())
+}
+
+model ActionLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType String   // "walk_instead_of_drive" | "plant_based_meal" | "air_dry_laundry" | "recycle" | "lower_heating"
+  category   String   // "transport" | "diet" | "energy" | "shopping"
+  value      Float    // numerical value depending on type (e.g. km, meals, loads)
+  co2Saved   Float    // kg CO2e saved
+  loggedAt   DateTime @default(now())
+}
+
+model Goal {
+  id                     String   @id @default(uuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetReductionPercent Float    // e.g. 10.0 for 10%
+  startDate              DateTime
+  endDate                DateTime
+  status                 String   // "ACTIVE" | "COMPLETED" | "FAILED"
+  createdAt              DateTime @default(now())
+}
+
+model Badge {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String   // "PLANT_POWERED" | "ECO_WALKER" | "CARBON_CLIPPER" | "GOAL_GETTER" | "STREAK_MASTER"
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, type])
+}
